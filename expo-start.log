@@ -1,0 +1,32 @@
+
+> apps@1.0.0 start
+> expo start --non-interactive
+
+  --non-interactive is not supported, use $CI=1 instead
+Starting project at C:\Users\HP\Desktop\TechAssess\apps
+Starting Metro Bundler
+
+Waiting on http://localhost:8081
+
+Logs for your project will appear below.
+C:\Users\HP\Desktop\TechAssess\apps\node_modules\expo\node_modules\@expo\cli\build\src\utils\errors.js:130
+    throw error;
+    ^
+
+Error: ENOENT: no such file or directory, watch 'C:\Users\HP\Desktop\TechAssess\apps\node_modules\@react-native\.gradle-plugin-5hegj6hx'
+    at FSWatcher.<computed> (node:internal/fs/watchers:321:19)
+    at Object.watch (node:fs:2548:36)
+    at #watchdir (C:\Users\HP\Desktop\TechAssess\apps\node_modules\@expo\metro-file-map\build\watchers\FallbackWatcher.js:164:38)
+    at C:\Users\HP\Desktop\TechAssess\apps\node_modules\@expo\metro-file-map\build\watchers\FallbackWatcher.js:268:39
+    at Walker.<anonymous> (C:\Users\HP\Desktop\TechAssess\apps\node_modules\@expo\metro-file-map\build\watchers\FallbackWatcher.js:410:33)
+    at Walker.emit (node:events:509:28)
+    at C:\Users\HP\Desktop\TechAssess\apps\node_modules\walker\lib\walker.js:69:16
+    at FSReqCallback.oncomplete (node:fs:185:23) {
+  errno: -4058,
+  syscall: 'watch',
+  code: 'ENOENT',
+  path: 'C:\\Users\\HP\\Desktop\\TechAssess\\apps\\node_modules\\@react-native\\.gradle-plugin-5hegj6hx',
+  filename: 'C:\\Users\\HP\\Desktop\\TechAssess\\apps\\node_modules\\@react-native\\.gradle-plugin-5hegj6hx'
+}
+
+Node.js v24.16.0

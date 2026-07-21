@@ -45,6 +45,7 @@ export type Listing = {
   authorRole: string;
   authorAvatar: string;
   authorAccent: string;
+  marketType?: 'buy' | 'rent' | 'shortlet';
   title: string;
   location: string;
   price: string;
@@ -144,6 +145,7 @@ export const listings: Listing[] = [
     authorAvatar:
       'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=240&q=80',
     authorAccent: '#FF8A3D',
+    marketType: 'shortlet',
     title: 'Modern duplex in Lekki Phase 1',
     location: 'Chevron Drive, Lagos',
     price: 'NGN 180,000 / night',
@@ -166,6 +168,7 @@ export const listings: Listing[] = [
     authorAvatar:
       'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=240&q=80',
     authorAccent: '#3BE178',
+    marketType: 'buy',
     title: 'Glass-front villa with private courtyard',
     location: 'Ikate, Lekki',
     price: 'NGN 240,000 / night',
@@ -190,6 +193,7 @@ export const listings: Listing[] = [
     authorAvatar:
       'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=240&q=80',
     authorAccent: '#6AE0FF',
+    marketType: 'buy',
     title: 'Architectural family home with clean lines',
     location: 'Banana Island, Lagos',
     price: 'NGN 410,000 / night',
@@ -213,6 +217,7 @@ export const listings: Listing[] = [
     authorAvatar:
       'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=240&q=80',
     authorAccent: '#FFC46C',
+    marketType: 'rent',
     title: 'Curated apartment with gallery-toned interior',
     location: 'Victoria Island, Lagos',
     price: 'NGN 95,000 / night',

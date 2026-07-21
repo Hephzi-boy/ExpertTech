@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   ImageBackground,
   Pressable,
@@ -11,7 +13,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 import {
-  communityPosts,
   exploreFilters,
   listings,
   profileActions,
@@ -22,10 +23,19 @@ import {
   type Story,
 } from '../data/mockData';
 import { ExpertListingWordmark } from '../components/ExpertListingWordmark';
+import { CommentsModal } from '../components/CommentsModal';
 import { HomeFeedSection } from '../components/HomeFeedSection';
 import { MauriceReferenceAvatar } from '../components/MauriceReferenceAvatar';
 import { Text } from '../components/AppText';
 import { StoryAvatar } from '../components/StoryAvatar';
+import {
+  createPostComment,
+  fetchFeedPosts,
+  fetchPostComments,
+  getDefaultFeedPosts,
+  likePost,
+} from '../services/communityApi';
+import { type FeedComment, type FeedPost } from '../types/community';
 import { iconSize, palette, radii, spacing } from '../theme';
 
 const floatingActionButtonSource = require('../../assets/Button.png');
@@ -33,9 +43,243 @@ const likedByGroupSources = {
   multiple: require('../../assets/Group.png'),
   single: require('../../assets/Group (1).png'),
 } as const;
+const ENABLE_REMOTE_FEED = false;
+const LOCAL_FEED_VIEWER = {
+  displayName: 'You',
+  id: Number.parseInt(process.env.EXPO_PUBLIC_FEED_USER_ID ?? '3', 10) || 3,
+  username: 'you',
+} as const;
+
+function buildLocalComment(postId: string, content: string): FeedComment {
+  const createdAt = new Date().toISOString();
+
+  return {
+    author: LOCAL_FEED_VIEWER,
+    content,
+    createdAt,
+    id: Date.now(),
+    postId: Number.parseInt(postId.replace(/\D+/g, ''), 10) || Date.now(),
+  };
+}
 
 export function HomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [posts, setPosts] = React.useState<FeedPost[]>(() => getDefaultFeedPosts());
+  const [isFeedLoading, setIsFeedLoading] = React.useState(ENABLE_REMOTE_FEED);
+  const [feedError, setFeedError] = React.useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = React.useState<FeedPost | null>(null);
+  const [comments, setComments] = React.useState<FeedComment[]>([]);
+  const [commentsError, setCommentsError] = React.useState<string | null>(null);
+  const [commentsLoading, setCommentsLoading] = React.useState(false);
+  const [commentDraft, setCommentDraft] = React.useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = React.useState(false);
+  const [localCommentsByPostId, setLocalCommentsByPostId] = React.useState<Record<string, FeedComment[]>>({});
+
+  React.useEffect(() => {
+    if (!ENABLE_REMOTE_FEED) {
+      return;
+    }
+
+    void loadLiveFeed();
+  }, []);
+
+  async function loadLiveFeed() {
+    if (!ENABLE_REMOTE_FEED) {
+      return;
+    }
+
+    setIsFeedLoading(true);
+    setFeedError(null);
+
+    try {
+      const nextPosts = await fetchFeedPosts();
+      setPosts(nextPosts.length > 0 ? nextPosts : getDefaultFeedPosts());
+    } catch (error) {
+      setPosts(getDefaultFeedPosts());
+      setFeedError(
+        error instanceof Error
+          ? `${error.message} Showing the local preview instead.`
+          : 'Unable to load the live feed. Showing the local preview instead.',
+      );
+    } finally {
+      setIsFeedLoading(false);
+    }
+  }
+
+  async function openComments(post: FeedPost) {
+    setSelectedPost(post);
+    setCommentDraft('');
+    setCommentsError(null);
+
+    if (!post.remoteId) {
+      setComments(localCommentsByPostId[post.id] ?? []);
+      setCommentsLoading(false);
+      return;
+    }
+
+    setComments([]);
+    setCommentsLoading(true);
+
+    try {
+      const nextComments = await fetchPostComments(post.remoteId);
+      setComments(nextComments);
+    } catch (error) {
+      setCommentsError(
+        error instanceof Error ? error.message : 'Unable to load comments right now.',
+      );
+    } finally {
+      setCommentsLoading(false);
+    }
+  }
+
+  function closeComments() {
+    if (isSubmittingComment) {
+      return;
+    }
+
+    setSelectedPost(null);
+    setCommentDraft('');
+    setComments([]);
+    setCommentsError(null);
+    setCommentsLoading(false);
+  }
+
+  async function submitComment() {
+    const trimmedComment = commentDraft.trim();
+
+    if (!selectedPost || trimmedComment.length === 0 || isSubmittingComment) {
+      return;
+    }
+
+    setIsSubmittingComment(true);
+
+    if (!selectedPost.remoteId) {
+      const createdComment = buildLocalComment(selectedPost.id, trimmedComment);
+
+      setLocalCommentsByPostId((currentComments) => ({
+        ...currentComments,
+        [selectedPost.id]: [...(currentComments[selectedPost.id] ?? []), createdComment],
+      }));
+      setComments((currentComments) => [...currentComments, createdComment]);
+      setCommentDraft('');
+      setPosts((currentPosts) =>
+        currentPosts.map((post) =>
+          post.id === selectedPost.id
+            ? {
+                ...post,
+                comments: post.comments + 1,
+              }
+            : post,
+        ),
+      );
+      setSelectedPost((currentPost) =>
+        currentPost
+          ? {
+              ...currentPost,
+              comments: currentPost.comments + 1,
+            }
+          : currentPost,
+      );
+      setIsSubmittingComment(false);
+      return;
+    }
+
+    try {
+      const createdComment = await createPostComment(selectedPost.remoteId, trimmedComment);
+      setComments((currentComments) => [...currentComments, createdComment]);
+      setCommentDraft('');
+      setPosts((currentPosts) =>
+        currentPosts.map((post) =>
+          post.remoteId === selectedPost.remoteId
+            ? {
+                ...post,
+                comments: post.comments + 1,
+              }
+            : post,
+        ),
+      );
+      setSelectedPost((currentPost) =>
+        currentPost
+          ? {
+              ...currentPost,
+              comments: currentPost.comments + 1,
+            }
+          : currentPost,
+      );
+    } catch (error) {
+      Alert.alert(
+        'Unable to post comment',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  }
+
+  async function handleLike(post: FeedPost) {
+    if (post.isLiked || post.isLikePending) {
+      return;
+    }
+
+    if (!post.remoteId) {
+      setPosts((currentPosts) =>
+        currentPosts.map((currentPost) =>
+          currentPost.id === post.id
+            ? {
+                ...currentPost,
+                isLiked: true,
+                likes: currentPost.likes + 1,
+              }
+            : currentPost,
+        ),
+      );
+      return;
+    }
+
+    setPosts((currentPosts) =>
+      currentPosts.map((currentPost) =>
+        currentPost.id === post.id
+          ? {
+              ...currentPost,
+              isLiked: true,
+              isLikePending: true,
+              likes: currentPost.likes + 1,
+            }
+          : currentPost,
+      ),
+    );
+
+    try {
+      await likePost(post.remoteId);
+      setPosts((currentPosts) =>
+        currentPosts.map((currentPost) =>
+          currentPost.id === post.id
+            ? {
+                ...currentPost,
+                isLikePending: false,
+              }
+            : currentPost,
+        ),
+      );
+    } catch (error) {
+      setPosts((currentPosts) =>
+        currentPosts.map((currentPost) =>
+          currentPost.id === post.id
+            ? {
+                ...currentPost,
+                isLiked: false,
+                isLikePending: false,
+                likes: Math.max(currentPost.likes - 1, 0),
+              }
+            : currentPost,
+        ),
+      );
+      Alert.alert(
+        'Unable to like post',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    }
+  }
 
   return (
     <View style={styles.homeScreenRoot}>
@@ -74,9 +318,34 @@ export function HomeScreen({ navigation }: any) {
           </ScrollView>
         </View>
 
+        {ENABLE_REMOTE_FEED && isFeedLoading ? (
+          <View style={styles.liveFeedStateCard}>
+            <ActivityIndicator color={palette.accent} />
+            <Text style={styles.liveFeedStateText}>Loading the live feed...</Text>
+          </View>
+        ) : null}
+
+        {ENABLE_REMOTE_FEED && feedError ? (
+          <Pressable
+            onPress={() => {
+              void loadLiveFeed();
+            }}
+            style={({ pressed }) => [styles.liveFeedStateCard, styles.liveFeedErrorCard, pressed && styles.cardPressed]}
+          >
+            <Text style={styles.liveFeedErrorText}>{feedError}</Text>
+            <Text style={styles.liveFeedRetryText}>Tap to retry the live feed.</Text>
+          </Pressable>
+        ) : null}
+
         <HomeFeedSection
+          onPressComment={(post) => {
+            void openComments(post);
+          }}
+          onPressLike={(post) => {
+            void handleLike(post);
+          }}
           onOpenProfile={() => navigation.getParent()?.navigate('Profile')}
-          posts={communityPosts}
+          posts={posts}
         />
       </ScreenScroll>
 
@@ -95,11 +364,34 @@ export function HomeScreen({ navigation }: any) {
       >
         <Image source={floatingActionButtonSource} style={styles.floatingActionButtonImage} />
       </Pressable>
+
+      <CommentsModal
+        comments={comments}
+        commentsError={commentsError}
+        commentsLoading={commentsLoading}
+        draftValue={commentDraft}
+        isSubmittingComment={isSubmittingComment}
+        onChangeDraftValue={setCommentDraft}
+        onClose={closeComments}
+        onRetry={() => {
+          if (selectedPost) {
+            void openComments(selectedPost);
+          }
+        }}
+        onSubmitComment={() => {
+          void submitComment();
+        }}
+        post={selectedPost}
+        visible={selectedPost !== null}
+      />
     </View>
   );
 }
 
 export function ExploreScreen({ navigation }: any) {
+  const [activeFilter, setActiveFilter] = React.useState(exploreFilters[0]);
+  const filteredListings = getFilteredListings(activeFilter);
+
   return (
     <ScreenScroll>
       <View style={styles.headerRow}>
@@ -107,7 +399,10 @@ export function ExploreScreen({ navigation }: any) {
           <Text style={styles.pageTitle}>Discover</Text>
           <Text style={styles.pageSubtitle}>Find what is available around you.</Text>
         </View>
-        <ActionIcon name="tune-variant" />
+        <ActionIcon
+          name="tune-variant"
+          onPress={() => setActiveFilter(exploreFilters[0])}
+        />
       </View>
 
       <View style={styles.searchShell}>
@@ -124,23 +419,24 @@ export function ExploreScreen({ navigation }: any) {
         horizontal
         showsHorizontalScrollIndicator={false}
       >
-        {exploreFilters.map((filter, index) => (
-          <View
+        {exploreFilters.map((filter) => (
+          <Pressable
             key={filter}
+            onPress={() => setActiveFilter(filter)}
             style={[
               styles.filterChip,
-              index === 0 && styles.filterChipActive,
+              activeFilter === filter && styles.filterChipActive,
             ]}
           >
             <Text
               style={[
                 styles.filterChipText,
-                index === 0 && styles.filterChipTextActive,
+                activeFilter === filter && styles.filterChipTextActive,
               ]}
             >
               {filter}
             </Text>
-          </View>
+          </Pressable>
         ))}
       </ScrollView>
 
@@ -154,7 +450,9 @@ export function ExploreScreen({ navigation }: any) {
           />
         </View>
         <Text style={styles.mapTitle}>Lekki, Lagos</Text>
-        <Text style={styles.mapCopy}>32 curated properties within 10 km</Text>
+        <Text style={styles.mapCopy}>
+          {filteredListings.length} curated {filteredListings.length === 1 ? 'property' : 'properties'} for {activeFilter.toLowerCase()} stays
+        </Text>
       </View>
 
       <View style={styles.sectionHeader}>
@@ -162,18 +460,27 @@ export function ExploreScreen({ navigation }: any) {
         <Text style={styles.sectionAction}>Map view</Text>
       </View>
 
-      {listings.slice(1, 4).map((listing) => (
-        <PropertyCard
-          key={listing.id}
-          listing={listing}
-          onPress={() =>
-            navigation.navigate('ListingDetail', {
-              listingId: listing.id,
-            })
-          }
-          variant="media"
-        />
-      ))}
+      {filteredListings.length > 0 ? (
+        filteredListings.map((listing) => (
+          <PropertyCard
+            key={listing.id}
+            listing={listing}
+            onPress={() =>
+              navigation.navigate('ListingDetail', {
+                listingId: listing.id,
+              })
+            }
+            variant="media"
+          />
+        ))
+      ) : (
+        <View style={styles.emptyStateCard}>
+          <Text style={styles.emptyStateTitle}>No matches yet</Text>
+          <Text style={styles.emptyStateBody}>
+            Try another filter to see more properties in this area.
+          </Text>
+        </View>
+      )}
     </ScreenScroll>
   );
 }
@@ -639,6 +946,22 @@ function StoryCard({ story }: { story: Story }) {
   );
 }
 
+function getFilteredListings(activeFilter: string) {
+  if (activeFilter === 'All') {
+    return listings;
+  }
+
+  if (activeFilter === 'Top rated') {
+    return [...listings]
+      .filter((listing) => listing.verified || listing.likes >= 25 || listing.views >= 150)
+      .sort((left, right) => right.likes - left.likes || right.views - left.views);
+  }
+
+  const targetMarket = activeFilter.toLowerCase();
+
+  return listings.filter((listing) => listing.marketType === targetMarket);
+}
+
 function PropertyCard({
   listing,
   onPress,
@@ -1020,6 +1343,37 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingRight: spacing.sm,
   },
+  liveFeedStateCard: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.borderSoft,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  liveFeedStateText: {
+    color: palette.textSoft,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  liveFeedErrorCard: {
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+  },
+  liveFeedErrorText: {
+    color: palette.textSoft,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  liveFeedRetryText: {
+    color: palette.accent,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   storyCard: {
     alignItems: 'center',
     width: 94,
@@ -1295,6 +1649,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: spacing.xs,
     maxWidth: 220,
+  },
+  emptyStateCard: {
+    backgroundColor: palette.surface,
+    borderColor: palette.borderSoft,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
+  emptyStateTitle: {
+    color: palette.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emptyStateBody: {
+    color: palette.textSoft,
+    fontSize: 14,
+    lineHeight: 22,
   },
   boardGrid: {
     flexDirection: 'row',

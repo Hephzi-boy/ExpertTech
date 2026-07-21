@@ -2,6 +2,7 @@
   "expo": {
     "name": "apps",
     "slug": "apps",
+    "owner": "hephzibah108",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -32,6 +33,11 @@
           "resizeMode": "contain"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ab2ab32b-af75-4f45-8d4b-58a484d819a7"
+      }
+    }
   }
 }

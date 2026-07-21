@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   Image,
   type ImageSourcePropType,
   Pressable,
@@ -10,6 +11,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 import { Text } from './AppText';
 import { type CommunityPost } from '../data/mockData';
+import { type FeedPost } from '../types/community';
 import { iconSize, palette, radii, spacing } from '../theme';
 
 const feedAvatarSources: Record<NonNullable<CommunityPost['avatarVariant']>, ImageSourcePropType> = {
@@ -37,11 +39,15 @@ const likedByGroupSources = {
 } as const;
 
 type HomeFeedSectionProps = {
+  onPressComment: (post: FeedPost) => void;
+  onPressLike: (post: FeedPost) => void;
   onOpenProfile: () => void;
-  posts: CommunityPost[];
+  posts: FeedPost[];
 };
 
 export function HomeFeedSection({
+  onPressComment,
+  onPressLike,
   onOpenProfile,
   posts,
 }: HomeFeedSectionProps) {
@@ -76,11 +82,11 @@ export function HomeFeedSection({
               <View style={styles.authorCopy}>
                 <Text style={styles.identityLine}>
                   <Text style={styles.authorName}>{post.author}</Text>
-                  <Text style={styles.metaInline}>{' • '}{post.audience}</Text>
+                  <Text style={styles.metaInline}>{' \u2022 '}{post.audience}</Text>
                 </Text>
                 <Text style={styles.secondaryMeta}>
                   {post.category}
-                  {' • '}
+                  {' \u2022 '}
                   {post.postedAt}
                 </Text>
               </View>
@@ -198,17 +204,36 @@ export function HomeFeedSection({
           ) : null}
 
           <View style={styles.reactionRow}>
-            <View style={styles.reactionGroup}>
-              <Image source={reactionIconSources.heart} style={styles.reactionIcon} />
+            <Pressable
+              accessibilityLabel={`Like post by ${post.author}`}
+              accessibilityRole="button"
+              disabled={post.isLikePending || post.isLiked}
+              onPress={() => onPressLike(post)}
+              style={({ pressed }) => [
+                styles.reactionGroup,
+                (post.isLikePending || post.isLiked) && styles.reactionGroupDisabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              {post.isLikePending ? (
+                <ActivityIndicator color={palette.accent} size="small" />
+              ) : post.isLiked ? (
+                <MaterialCommunityIcons color={palette.highlight} name="heart" size={iconSize.lg} />
+              ) : (
+                <Image source={reactionIconSources.heart} style={styles.reactionIcon} />
+              )}
               <Text style={styles.reactionValue}>{post.likes}</Text>
-            </View>
+            </Pressable>
 
-            <View style={styles.reactionGroup}>
+            <Pressable
+              accessibilityLabel={`View comments for post by ${post.author}`}
+              accessibilityRole="button"
+              onPress={() => onPressComment(post)}
+              style={({ pressed }) => [styles.reactionGroup, pressed && styles.pressed]}
+            >
               <Image source={reactionIconSources.comment} style={styles.reactionIcon} />
-              {post.comments > 0 ? (
-                <Text style={styles.reactionValue}>{post.comments}</Text>
-              ) : null}
-            </View>
+              <Text style={styles.reactionValue}>{post.comments}</Text>
+            </Pressable>
 
             <Pressable accessibilityLabel="Share post" accessibilityRole="button">
               <Image source={reactionIconSources.send} style={styles.reactionIcon} />
@@ -224,24 +249,46 @@ export function HomeFeedSection({
             </View>
           </View>
 
-          <View style={styles.likedRow}>
-            <View style={styles.likedAvatars}>
-              <Image
-                source={
-                  post.otherLikes > 0 ? likedByGroupSources.multiple : likedByGroupSources.single
-                }
-                style={post.otherLikes > 0 ? styles.likedGroupMultiple : styles.likedGroupSingle}
-              />
+          {post.likes > 0 ? (
+            <View style={styles.likedRow}>
+              {post.likedByHandle ? (
+                <View style={styles.likedAvatars}>
+                  <Image
+                    source={
+                      post.otherLikes > 0 ? likedByGroupSources.multiple : likedByGroupSources.single
+                    }
+                    style={post.otherLikes > 0 ? styles.likedGroupMultiple : styles.likedGroupSingle}
+                  />
+                </View>
+              ) : null}
+              <Text style={styles.likedText}>{getLikeSummary(post)}</Text>
             </View>
-            <Text style={styles.likedText}>
-              Liked by <Text style={styles.likedHandle}>{post.likedByHandle}</Text>
-              {post.otherLikes > 0 ? ` and ${post.otherLikes} others` : ''}
-            </Text>
-          </View>
+          ) : null}
         </View>
       ))}
     </View>
   );
+}
+
+function getLikeSummary(post: FeedPost) {
+  if (post.isLiked) {
+    if (post.likes <= 1) {
+      return 'Liked by you';
+    }
+
+    return `Liked by you and ${post.likes - 1} others`;
+  }
+
+  if (post.likedByHandle) {
+    return (
+      <>
+        Liked by <Text style={styles.likedHandle}>{post.likedByHandle}</Text>
+        {post.otherLikes > 0 ? ` and ${post.otherLikes} others` : ''}
+      </>
+    );
+  }
+
+  return `${post.likes} ${post.likes === 1 ? 'like' : 'likes'}`;
 }
 
 const styles = StyleSheet.create({
@@ -435,6 +482,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.xs,
+  },
+  reactionGroupDisabled: {
+    opacity: 0.96,
   },
   reactionValue: {
     color: '#C7C9CE',
